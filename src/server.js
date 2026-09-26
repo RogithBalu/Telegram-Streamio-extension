@@ -11,6 +11,10 @@ async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT || 7000);
 
+  // Trust the reverse proxy (Render, etc.) so req.protocol correctly reports
+  // "https" instead of "http" — needed to build correct public stream URLs.
+  app.set("trust proxy", true);
+
   // Enable CORS for Stremio
   app.use(cors());
 

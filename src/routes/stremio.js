@@ -14,7 +14,8 @@ export function createStremioRouter(telegramClient, streamClient) {
     }
 
     try {
-      const streams = await resolveStreams(telegramClient, id, type);
+      const baseUrl = `${req.protocol}://${req.get("host")}`;
+      const streams = await resolveStreams(telegramClient, id, type, baseUrl);
       res.json({ streams });
     } catch (error) {
       console.error("Error resolving streams:", error);

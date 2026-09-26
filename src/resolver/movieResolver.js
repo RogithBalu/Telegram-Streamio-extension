@@ -55,7 +55,7 @@ async function fetchMetadata(imdbId, type) {
 
 const pad2 = (n) => String(n).padStart(2, "0");
 
-export async function resolveStreams(client, id, type) {
+export async function resolveStreams(client, id, type, baseUrl) {
   const cacheKey = `${type}_${id}`;
   if (streamCache.has(cacheKey)) {
     const cached = streamCache.get(cacheKey);
@@ -131,7 +131,7 @@ export async function resolveStreams(client, id, type) {
 
     // Stremio URL format for our proxy
     // We pass chatId and messageId to our proxy
-    const proxyUrl = `http://127.0.0.1:${process.env.PORT || 7000}/stream/${result.chatId}/${result.messageId}/video.mkv`;
+    const proxyUrl = `${baseUrl || `http://127.0.0.1:${process.env.PORT || 7000}`}/stream/${result.chatId}/${result.messageId}/video.mkv`;
 
     validStreams.push({
       name,
