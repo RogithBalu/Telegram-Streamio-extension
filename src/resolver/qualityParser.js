@@ -1,9 +1,13 @@
 export function parseQuality(filename) {
   const f = filename.toLowerCase();
-  if (f.includes("2160p") || f.includes("4k")) return "4K";
+  // Explicit pixel heights are the reliable signal — check them first.
+  if (f.includes("2160p")) return "4K";
   if (f.includes("1080p")) return "1080p";
   if (f.includes("720p")) return "720p";
   if (f.includes("480p")) return "480p";
+  // "4K"/"UHD" only counts as a standalone token: release-site tags like
+  // "-4kHDHub.Com" or "DS4K" (downscaled) must not turn a 720p file into 4K.
+  if (/(?<![a-z0-9])(4k|uhd)(?![a-z0-9])/.test(f)) return "4K";
   return "Unknown";
 }
 

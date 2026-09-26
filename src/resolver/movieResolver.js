@@ -10,6 +10,9 @@ const CACHE_FILE = path.join(__dirname, "../../.stream-cache/.resolved-streams.j
 
 const streamCache = new Map();
 
+// How many of the best-ranked streams Stremio is shown per title.
+const MAX_STREAMS_SHOWN = 5;
+
 // Persist resolved streams to disk so an already-searched movie doesn't need
 // the whole (slow) bot-automation flow re-run just because the server restarted.
 function loadPersistedCache() {
@@ -187,8 +190,9 @@ export async function resolveStreams(client, id, type, baseUrl) {
     return true;
   });
 
-  // Cap at the 10 best streams
-  const capped = deduped.slice(0, 10);
+  // The search gathers up to 10 candidates, but only show the 5 best. `deduped`
+  // is already sorted best-first (resolution, source, size), so slice the top.
+  const capped = deduped.slice(0, MAX_STREAMS_SHOWN);
 
   // Remove internal properties before returning to Stremio
   const finalStreams = capped.map(s => {
