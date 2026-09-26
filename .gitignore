@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Secrets — never commit these
+.env
+.env.local
+.env.*.local
+session/
+*.session
+
+# Runtime data
+cache/
+.stream-cache/
+
+# Logs
+npm-debug.log*
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local backups/snapshots — not part of the source tree
+*.zip

@@ -1,0 +1,21 @@
+{
+  "name": "telegram-stremio",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "telegram:login": "node src/telegram/auth.js",
+    "telegram:test": "node src/telegram/test.js",
+    "telegram:chats": "node src/telegram/listChats.js",
+    "search": "node src/telegram/searchCli.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
+    "input": "^1.0.1",
+    "telegram": "^2.26.22"
+  }
+}
