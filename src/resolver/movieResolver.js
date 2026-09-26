@@ -187,8 +187,8 @@ export async function resolveStreams(client, id, type, baseUrl) {
     return true;
   });
 
-  // Cap at 5 best streams to avoid overloading the Telegram connection
-  const capped = deduped.slice(0, 5);
+  // Cap at the 10 best streams
+  const capped = deduped.slice(0, 10);
 
   // Remove internal properties before returning to Stremio
   const finalStreams = capped.map(s => {

@@ -4,6 +4,12 @@ import { waitingForDocument } from "./forwarder.js";
 // Sleep utility
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// How many result buttons to press per search, and the hard time limit for the
+// whole search. Each press costs ~1.5s pacing + Telegram round-trip, so the
+// window has to grow with the press count or the last presses get cut off.
+const MAX_BUTTON_PRESSES = 10;
+const SEARCH_TIMEOUT_MS = 30000;
+
 // Returns { floodWait: seconds } if Telegram rate-limited this call, otherwise null.
 // `sourceUsername` is the bot we already sent the search to, if any — when the
 // callback's deep-link points back at that same bot, we're already in that exact
@@ -134,8 +140,8 @@ export async function automateMovieRequest(client, query) {
         resolve(results);
       };
 
-      // Absolute max timeout — resolve with whatever we have after 20 seconds
-      const absoluteTimeout = setTimeout(finalize, 20000);
+      // Absolute max timeout — resolve with whatever we have after SEARCH_TIMEOUT_MS
+      const absoluteTimeout = setTimeout(finalize, SEARCH_TIMEOUT_MS);
 
       waitingForDocument.set(query, (doc) => {
         if (finalized) return; // ignore late arrivals
@@ -171,9 +177,9 @@ export async function automateMovieRequest(client, query) {
           if (msg.replyMarkup && msg.replyMarkup.rows) {
             let pressedCount = 0;
             for (const row of msg.replyMarkup.rows) {
-              if (finalized || pressedCount >= 5) break;
+              if (finalized || pressedCount >= MAX_BUTTON_PRESSES) break;
               for (const button of row.buttons) {
-                if (finalized || pressedCount >= 5) break;
+                if (finalized || pressedCount >= MAX_BUTTON_PRESSES) break;
                 const btnText = button.text.toLowerCase();
                 const cleanQuery = query.toLowerCase().split(' ')[0];
                 
