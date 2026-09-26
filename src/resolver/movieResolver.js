@@ -117,10 +117,19 @@ export async function resolveStreams(client, id, type, baseUrl) {
       if (parsed.season !== season || parsed.episode !== episode) {
         continue;
       }
-    } else if (meta.year && parsed.year && meta.year !== parsed.year) {
-      // Allow +/- 1 year discrepancy
-      if (Math.abs(meta.year - parsed.year) > 1) {
-         continue;
+    } else {
+      // A movie must never be satisfied by an episode or season pack of a
+      // show that just shares its title (e.g. the "Obsession" series files
+      // showing up under the "Obsession" movie).
+      if (parsed.season !== null || parsed.episode !== null) {
+        continue;
+      }
+
+      if (meta.year && parsed.year && meta.year !== parsed.year) {
+        // Allow +/- 1 year discrepancy
+        if (Math.abs(meta.year - parsed.year) > 1) {
+           continue;
+        }
       }
     }
 

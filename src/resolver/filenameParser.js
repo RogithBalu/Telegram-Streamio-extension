@@ -5,6 +5,14 @@ const EPISODE_PATTERNS = [
   /\b(\d{1,2})x(\d{2})\b/i
 ];
 
+// Season with no episode number — season packs like "Show_S01_Complete" or
+// "Show Season 1". Must be a standalone token so titles like "S1m0ne" or
+// "Se7en" aren't mistaken for one.
+const SEASON_ONLY_PATTERNS = [
+  /(?:^|[\s._\-\[\(])S(\d{1,2})(?=$|[\s._\-\]\)])/i,
+  /(?:^|[\s._\-\[\(])Season[\s._\-]?(\d{1,2})(?=$|[\s._\-\]\)])/i
+];
+
 export function parseFilename(filename) {
   // Simple heuristic: title usually comes before the year, season/episode
   // marker, or resolution/quality indicator.
@@ -25,6 +33,19 @@ export function parseFilename(filename) {
       episode = parseInt(m[2]);
       episodeMatch = m;
       break;
+    }
+  }
+
+  // No episode number — fall back to a bare season marker (season pack).
+  // `episode` stays null; `episodeMatch` is only used as a title-cut marker.
+  if (!episodeMatch) {
+    for (const pattern of SEASON_ONLY_PATTERNS) {
+      const m = cleanName.match(pattern);
+      if (m) {
+        season = parseInt(m[1]);
+        episodeMatch = m;
+        break;
+      }
     }
   }
 
