@@ -10,6 +10,62 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const MAX_BUTTON_PRESSES = 10;
 const SEARCH_TIMEOUT_MS = 30000;
 
+// The bot's reply isn't instant, and is slower for some queries (series lookups
+// in particular), so poll for it rather than looking once after a fixed delay.
+const REPLY_WAIT_MS = 12000;
+const REPLY_POLL_MS = 1000;
+
+// A result button is one whose label looks like a file entry (size/quality) or
+// starts with the title — this skips the bot's filter/paging buttons.
+function isResultButton(button, query) {
+  const btnText = (button.text || "").toLowerCase();
+  const firstWord = query.toLowerCase().split(" ")[0];
+  return btnText.includes(firstWord) || btnText.includes("mb") || btnText.includes("gb") || btnText.includes("1080") || btnText.includes("720");
+}
+
+// Polls the chat until the bot's reply to `sentMsg` shows up with result
+// buttons, or REPLY_WAIT_MS passes. Only messages newer than our own count, so
+// stale results from an earlier identical search are never clicked.
+async function waitForResultMessages(client, entity, sentMsg, query, isDone) {
+  const started = Date.now();
+  let recent = 0;
+  let replyCount = 0;
+  let withButtons = 0;
+
+  for (let attempt = 0; Date.now() - started < REPLY_WAIT_MS && !isDone(); attempt++) {
+    await sleep(attempt === 0 ? 1500 : REPLY_POLL_MS);
+    try {
+      const msgs = await client.getMessages(entity, { limit: 15 });
+      const replies = msgs.filter(msg => {
+        const isReplyToUs = msg.replyTo && msg.replyTo.replyToMsgId === sentMsg.id;
+        const mentionsUs = msg.id > sentMsg.id && msg.message && msg.message.includes(query);
+        return isReplyToUs || mentionsUs;
+      });
+      const usable = replies.filter(msg =>
+        msg.replyMarkup?.rows?.some(row => row.buttons.some(b => isResultButton(b, query)))
+      );
+      recent = msgs.length;
+      replyCount = replies.length;
+      withButtons = replies.filter(msg => msg.replyMarkup?.rows?.length).length;
+
+      if (usable.length > 0) {
+        const buttonCount = usable.reduce((n, msg) =>
+          n + msg.replyMarkup.rows.reduce((m, row) => m + row.buttons.filter(b => isResultButton(b, query)).length, 0), 0);
+        console.log(`[Automation] Bot replied after ${((Date.now() - started) / 1000).toFixed(1)}s with ${buttonCount} result button(s)`);
+        return usable;
+      }
+    } catch (err) {
+      console.warn("[Automation] Could not read chat while waiting for the bot:", err.message);
+    }
+  }
+
+  if (!isDone()) {
+    console.warn(`[Automation] No usable reply after ${((Date.now() - started) / 1000).toFixed(1)}s ` +
+      `(saw ${recent} recent messages, ${replyCount} replying to the query, ${withButtons} with buttons)`);
+  }
+  return [];
+}
+
 // Returns { floodWait: seconds } if Telegram rate-limited this call, otherwise null.
 // `sourceUsername` is the bot we already sent the search to, if any — when the
 // callback's deep-link points back at that same bot, we're already in that exact
@@ -34,12 +90,20 @@ async function simulateButtonClick(client, peer, msgId, button, sourceUsername) 
       }
     }
 
-    if (urlToOpen) {
-      const match = urlToOpen.match(/t\.me\/([^?]+)\?start=(.+)/);
-      if (match) {
+    if (!urlToOpen) {
+      console.log(`[Automation] Button "${(button.text || "").substring(0, 40)}" (${button.className}) has no link to follow`);
+    } else {
+      const match = urlToOpen.match(/(?:t\.me|telegram\.(?:me|dog))\/([^/?]+)\/?\?start=([^&\s]+)/);
+      if (!match) {
+        console.log(`[Automation] Button "${(button.text || "").substring(0, 40)}" links to something other than a bot deep-link, skipping: ${urlToOpen}`);
+      } else {
         const botUsername = match[1];
         const startParam = match[2];
-        if (sourceUsername && botUsername.toLowerCase() === sourceUsername.toLowerCase()) {
+        // Only a callback answer can safely skip StartBot when it points back at the
+        // bot we're already chatting with. A plain link button has no other trigger,
+        // so its deep-link must actually be started.
+        const viaCallback = button.className === "KeyboardButtonCallback";
+        if (viaCallback && sourceUsername && botUsername.toLowerCase() === sourceUsername.toLowerCase()) {
           console.log(`[Automation] Already chatting with @${botUsername} directly — skipping redundant StartBot`);
         } else {
           console.log(`[Automation] Starting bot @${botUsername} with param ${startParam}`);
@@ -160,44 +224,30 @@ export async function automateMovieRequest(client, query) {
         if (finalized) break; // Stop if we already have enough results
         console.log(`[Automation] Sending request for '${query}' in ${source.title}`);
         const sentMsg = await client.sendMessage(source.entity, { message: query });
-        await sleep(2000); // Wait for bot to reply
-        
-        // 3. Fetch recent messages to find the bot's reply
-        const msgs = await client.getMessages(source.entity, { limit: 10 });
-        
-        for (const msg of msgs) {
-          if (finalized) break; // Stop clicking if already done
-          // Ensure we only click buttons on messages that are a reply to OUR request
-          const isReplyToUs = msg.replyTo && msg.replyTo.replyToMsgId === sentMsg.id;
-          const mentionsUs = msg.message && msg.message.includes(query);
-          
-          if (!isReplyToUs && !mentionsUs) continue;
 
-          // Check if message has inline buttons
-          if (msg.replyMarkup && msg.replyMarkup.rows) {
-            let pressedCount = 0;
-            for (const row of msg.replyMarkup.rows) {
+        // 3. Wait for the bot's reply (polls — see waitForResultMessages)
+        const replies = await waitForResultMessages(client, source.entity, sentMsg, query, () => finalized);
+
+        let pressedCount = 0;
+        for (const msg of replies) {
+          for (const row of msg.replyMarkup.rows) {
+            if (finalized || pressedCount >= MAX_BUTTON_PRESSES) break;
+            for (const button of row.buttons) {
               if (finalized || pressedCount >= MAX_BUTTON_PRESSES) break;
-              for (const button of row.buttons) {
-                if (finalized || pressedCount >= MAX_BUTTON_PRESSES) break;
-                const btnText = button.text.toLowerCase();
-                const cleanQuery = query.toLowerCase().split(' ')[0];
-                
-                if (btnText.includes(cleanQuery) || btnText.includes("mb") || btnText.includes("gb") || btnText.includes("1080") || btnText.includes("720")) {
-                  const sourceUsername = source.kind === "bot" ? source.title : null;
-                  const result = await simulateButtonClick(client, source.entity, msg.id, button, sourceUsername);
-                  pressedCount++;
-                  if (result?.floodWait) {
-                    // Telegram is rate-limiting this account for this action right now —
-                    // every further click would fail the same way, so stop immediately
-                    // instead of burning through the rest of the candidates for nothing.
-                    console.warn(`[Automation] ⏳ Flood-wait (${result.floodWait}s) — stopping this search early, returning what we have.`);
-                    finalize();
-                    break;
-                  }
-                  await sleep(1500); // Don't spam
-                }
+              if (!isResultButton(button, query)) continue;
+
+              const sourceUsername = source.kind === "bot" ? source.title : null;
+              const result = await simulateButtonClick(client, source.entity, msg.id, button, sourceUsername);
+              pressedCount++;
+              if (result?.floodWait) {
+                // Telegram is rate-limiting this account for this action right now —
+                // every further click would fail the same way, so stop immediately
+                // instead of burning through the rest of the candidates for nothing.
+                console.warn(`[Automation] ⏳ Flood-wait (${result.floodWait}s) — stopping this search early, returning what we have.`);
+                finalize();
+                break;
               }
+              await sleep(1500); // Don't spam
             }
           }
         }

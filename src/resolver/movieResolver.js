@@ -13,6 +13,9 @@ const streamCache = new Map();
 // How many of the best-ranked streams Stremio is shown per title.
 const MAX_STREAMS_SHOWN = 5;
 
+// How long a search that found nothing is remembered.
+const EMPTY_RESULT_TTL_MS = 60 * 1000;
+
 // Persist resolved streams to disk so an already-searched movie doesn't need
 // the whole (slow) bot-automation flow re-run just because the server restarted.
 function loadPersistedCache() {
@@ -63,7 +66,7 @@ export async function resolveStreams(client, id, type, baseUrl) {
   if (streamCache.has(cacheKey)) {
     const cached = streamCache.get(cacheKey);
     // 60 minutes TTL
-    const ttl = (process.env.CACHE_TTL || 3600) * 1000;
+    const ttl = cached.ttl ?? (process.env.CACHE_TTL || 3600) * 1000;
     if (Date.now() - cached.timestamp < ttl) {
       console.log(`[INFO] Serving cached streams for ${id}`);
       return cached.streams;
@@ -202,9 +205,12 @@ export async function resolveStreams(client, id, type, baseUrl) {
     return s;
   });
 
+  // An empty result is usually a failed/slow search, not "nothing exists" — cache
+  // it only briefly so reopening the page retries instead of being stuck for an hour.
   streamCache.set(`${type}_${id}`, {
     timestamp: Date.now(),
-    streams: finalStreams
+    streams: finalStreams,
+    ...(finalStreams.length === 0 && { ttl: EMPTY_RESULT_TTL_MS })
   });
   savePersistedCache();
 
